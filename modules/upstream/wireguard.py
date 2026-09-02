@@ -34,6 +34,14 @@ SNOW_IFACE = "snow-wg"  # stable iface name regardless of source config name
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 
 
+def _is_ipv4(s: str) -> bool:
+    import ipaddress
+    try:
+        return ipaddress.ip_address(s).version == 4
+    except ValueError:
+        return False
+
+
 class WireGuardUpstream:
     name = "wireguard"
 
@@ -48,7 +56,7 @@ class WireGuardUpstream:
         self.config_arg = config
         self._iface = SNOW_IFACE
         self._staged_config_backup: Path | None = None
-        self._endpoint: tuple[str, int] | None = None
+        self._endpoints: list[tuple[str, int]] = []
 
     @property
     def iface(self) -> str:
@@ -119,8 +127,14 @@ class WireGuardUpstream:
 
     def _parse_endpoint_from_config(self, src: Path) -> None:
         """Pull `Endpoint = host:port` out of the staged config and resolve it
-        to an IPv4 while DNS is still usable (write_config runs before the
-        pre-engage kill-switch lock)."""
+        to IPv4 address(es) while DNS is still usable (write_config runs
+        before the pre-engage kill-switch lock).
+
+        ALL A records are kept, not just the first: wg-quick resolves the
+        endpoint hostname itself and may pick any of them — if the kill-switch
+        allowed only one and wg-quick chose another, the handshake UDP would
+        be dropped and the tunnel could never come up."""
+        import ipaddress
         import socket
         try:
             text = src.read_text()
@@ -136,21 +150,22 @@ class WireGuardUpstream:
             if not host or not port.isdigit():
                 continue
             try:
-                import ipaddress
+                addr = ipaddress.ip_address(host)
+                ips = [host] if addr.version == 4 else []
+            except ValueError:
                 try:
-                    ip_object = ipaddress.ip_address(host)
-                    if ip_object.version != 4:
-                        return  # IPv6 endpoint — stack is killed anyway
-                    ip = host
-                except ValueError:
-                    ip = socket.gethostbyname(host)  # resolves A records only
-            except OSError:
-                log(f"could not resolve WG endpoint {host!r} — the pre-engage "
-                    f"lock cannot allow the handshake UDP; tunnel start may "
-                    f"time out", "warn")
+                    _, _, ips = socket.gethostbyname_ex(host)
+                except OSError:
+                    ips = []
+                ips = [i for i in ips if _is_ipv4(i)]
+            if not ips:
+                log(f"could not resolve WG endpoint {host!r} to any IPv4 — the "
+                    f"pre-engage lock cannot allow the handshake UDP; tunnel "
+                    f"start may time out", "warn")
                 return
-            self._endpoint = (ip, int(port))
-            log(f"WG endpoint pre-resolved for the kill-switch: {ip}:{port}", "ok")
+            self._endpoints = [(i, int(port)) for i in ips]
+            log(f"WG endpoint pre-resolved for the kill-switch: "
+                f"{','.join(i for i, _ in self._endpoints)}:{port}", "ok")
             return
 
     def start(self, timeout: int = 20) -> bool:
@@ -227,6 +242,9 @@ class WireGuardUpstream:
         without an explicit accept they survive only as long as a conntrack
         ESTABLISHED entry, so an idle tunnel without PersistentKeepalive
         would be dropped once that entry expires.
+
+        Authoritative: replaces the config-time pre-resolution (which kept
+        every A record) with the single address wg-quick actually chose.
         """
         cp = sh(["wg", "show", self._iface, "endpoints"], check=False)
         if cp.returncode != 0 or not cp.stdout.strip():
@@ -238,15 +256,12 @@ class WireGuardUpstream:
             host, _, port = parts[1].rpartition(":")
             host = host.strip("[]")
             if host and port.isdigit():
-                self._endpoint = (host, int(port))
+                self._endpoints = [(host, int(port))]
                 log(f"WG endpoint pinned for kill-switch: {host}:{port}", "ok")
                 return
 
     def killswitch_extra_accepts(self) -> list[tuple[str, str, int]]:
-        if self._endpoint is None:
-            return []
-        ip, port = self._endpoint
-        return [("udp", ip, port)]
+        return [("udp", ip, port) for ip, port in self._endpoints]
 
     def verify_egress(self) -> dict:
         """Direct HTTPS to an IP-echo service. If egress is via WG, the

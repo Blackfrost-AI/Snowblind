@@ -107,6 +107,13 @@ def _install(owner_uids, egress_ifaces, extra_accepts, bypass, target_bypass) ->
     if not _chain_exists():
         sh(f"iptables -N {CHAIN}")
         sh(f"iptables -I OUTPUT 1 -j {CHAIN}")
+    else:
+        # Chain present but jump missing (someone flushed OUTPUT): without the
+        # jump nothing traverses the allow rules, and -P OUTPUT DROP would
+        # brick even the upstream. Re-assert the jump.
+        cp = sh(["iptables", "-C", "OUTPUT", "-j", CHAIN], check=False)
+        if is_dry_run() or cp.returncode != 0:
+            sh(f"iptables -I OUTPUT 1 -j {CHAIN}")
     sh(f"iptables -F {CHAIN}")
 
     cmds = [
@@ -140,8 +147,10 @@ def _install(owner_uids, egress_ifaces, extra_accepts, bypass, target_bypass) ->
     cmds.append("iptables -P OUTPUT DROP")  # belt-and-suspenders behind the chain DROP
     # INPUT-side belt + suspenders for hosts running INPUT default DROP.
     # -C first: prelock and apply both run this, and it must not duplicate.
+    # is_dry_run: sh() fakes rc=0 under dry-run, which would read as "rule
+    # already present" and hide the insert from the preview.
     cp = sh(["iptables", "-C", "INPUT"] + _INPUT_RULE_ARGS, check=False)
-    if cp.returncode != 0:
+    if is_dry_run() or cp.returncode != 0:
         sh(" ".join(["iptables", "-I", "INPUT", "1"] + _INPUT_RULE_ARGS), check=False)
     # IPv6: block entirely (we already nuked the stack via sysctl).
     sh("ip6tables -P OUTPUT DROP", check=False)
@@ -260,11 +269,20 @@ def revert() -> None:
     sh(f"iptables -F {CHAIN}", check=False)
     sh(f"iptables -X {CHAIN}", check=False)
     if FILTER_BACKUP.exists():
-        sh(f"sh -c 'iptables-restore < {FILTER_BACKUP}'", check=False)
-        log(f"kill-switch: filter restored from {FILTER_BACKUP}", "ok")
-        FILTER_BACKUP.unlink()
+        cp = sh(f"sh -c 'iptables-restore < {FILTER_BACKUP}'", check=False)
+        if cp.returncode == 0:
+            log(f"kill-switch: filter restored from {FILTER_BACKUP}", "ok")
+            # Consume the backup only when the restore actually landed (and
+            # never under --dry-run, where nothing was restored) — it is the
+            # sole recovery artifact if a later restore needs re-running.
+            if not is_dry_run():
+                FILTER_BACKUP.unlink()
+        else:
+            log(f"kill-switch: iptables-restore FAILED (rc={cp.returncode}) — "
+                f"backup KEPT at {FILTER_BACKUP}", "err")
     else:
         log(f"kill-switch: no backup at {FILTER_BACKUP}, left flushed", "warn")
     if FILTER6_BACKUP.exists():
-        sh(f"sh -c 'ip6tables-restore < {FILTER6_BACKUP}'", check=False)
-        FILTER6_BACKUP.unlink()
+        cp = sh(f"sh -c 'ip6tables-restore < {FILTER6_BACKUP}'", check=False)
+        if cp.returncode == 0 and not is_dry_run():
+            FILTER6_BACKUP.unlink()

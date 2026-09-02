@@ -46,6 +46,11 @@ def rollback() -> None:
     log(f"rolling back {len(entries)} journaled actions in reverse")
     base = baseline_load()
     failures = 0  # count revert errors — keep the journal if any fail
+    # Idempotent modules only need ONE revert per restore, however many
+    # journal entries they wrote (the killswitch now writes prelock AND
+    # apply). Re-reverting is harmless but noisy — and re-consuming backups
+    # that are already gone prints misleading warnings.
+    done: set[str] = set()
 
     for e in reversed(entries):
         mod = e.get("module")
@@ -62,11 +67,20 @@ def rollback() -> None:
                     sh(["systemctl", "stop", unit + ".timer"], check=False)
                     log(f"cancelled pending autorestore timer: {unit}", "ok")
             elif mod == "killswitch":
-                killswitch.revert()
+                if act == "unwind":
+                    log("killswitch: lock was already released at engage time "
+                        "(unwind) — nothing to do", "ok")
+                elif "killswitch" not in done:
+                    killswitch.revert()
+                    done.add("killswitch")
             elif mod == "transproxy":
-                transproxy.revert()
+                if "transproxy" not in done:
+                    transproxy.revert()
+                    done.add("transproxy")
             elif mod == "hostsfile" and act == "pin":
-                hostsfile.revert()
+                if "hostsfile" not in done:
+                    hostsfile.revert()
+                    done.add("hostsfile")
             elif mod == "tor":
                 if act == "start":
                     tor.stop()

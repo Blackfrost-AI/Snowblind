@@ -258,11 +258,16 @@ def launch(extra_args: list[str] | None = None, skip_gates: bool = False) -> int
             return 1
         ns_name = _netns.ns_name(active)
 
-    out_f = open(stdout_log, "ab", buffering=0)
-    err_f = open(stderr_log, "ab", buffering=0)
-    # Browser logs can echo URLs / crash traces — owner-only.
-    os.chmod(stdout_log, 0o600)
-    os.chmod(stderr_log, 0o600)
+    def _open_log(path: Path):
+        # Logs can echo URLs / crash traces — 0600 from the moment the file
+        # exists (os.open applies the mode at creation; no umask window, and
+        # fchmod re-asserts it if the file pre-existed wider).
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        os.fchmod(fd, 0o600)
+        return os.fdopen(fd, "ab", buffering=0)
+
+    out_f = _open_log(stdout_log)
+    err_f = _open_log(stderr_log)
 
     popen_kwargs: dict = {
         "stdin": subprocess.DEVNULL,
