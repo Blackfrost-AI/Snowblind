@@ -53,9 +53,13 @@ def rollback() -> None:
         try:
             if mod == "session" and act == "schedule_autorestore":
                 # Cancel any pending systemd timer we set with `engage --duration`.
+                # systemd-run creates BOTH <unit>.timer and <unit>.service —
+                # stopping only the service leaves the timer active, and it
+                # fires later and runs a pointless restore.
                 unit = e.get("unit_name", "")
                 if unit:
                     sh(["systemctl", "stop", unit], check=False)
+                    sh(["systemctl", "stop", unit + ".timer"], check=False)
                     log(f"cancelled pending autorestore timer: {unit}", "ok")
             elif mod == "killswitch":
                 killswitch.revert()
