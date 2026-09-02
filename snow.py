@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-ghost — anonymity / OPSEC tool.
+snow — anonymity / OPSEC tool.
 
 Single-binary CLI that chains together the modules in ./modules to turn a
 Kali host into an anonymous-by-default client: MAC randomization, hostname
 rotation, IPv6 kill, Tor transparent proxy, kill-switch firewall, circuit
 rotation, and leak verification. Every state change is journaled to
-state/journal.json so `ghost restore` can reverse it.
+state/journal.json so `snow restore` can reverse it.
 
 For authorized use on systems you own or have written permission to test.
 """
@@ -24,17 +24,17 @@ sys.path.insert(0, str(ROOT))
 
 # ---------------------------------------------------------------------------
 # Pre-parse --persona BEFORE any module imports so util.py reads the right
-# GHOST_PERSONA at module-import time. Module globals like STATE_DIR are
+# SNOW_PERSONA at module-import time. Module globals like STATE_DIR are
 # derived once at import; we can't rebind them after the fact across all
 # downstream importers (they have their own references). Setting the env
 # var here is the cleanest way to thread persona through.
 # ---------------------------------------------------------------------------
 for _i, _a in enumerate(sys.argv):
     if _a == "--persona" and _i + 1 < len(sys.argv):
-        os.environ["GHOST_PERSONA"] = sys.argv[_i + 1]
+        os.environ["SNOW_PERSONA"] = sys.argv[_i + 1]
         break
     if _a.startswith("--persona="):
-        os.environ["GHOST_PERSONA"] = _a.split("=", 1)[1]
+        os.environ["SNOW_PERSONA"] = _a.split("=", 1)[1]
         break
 
 from modules import baseline, mac, host, hostsfile, ipv6, tor, transproxy, killswitch, rotate, leaktest, restore, doctor, browser, persona, netns  # noqa: E402
@@ -47,11 +47,11 @@ from modules.upstream import from_spec as upstream_from_spec  # noqa: E402
 
 
 def _validate_active_persona() -> None:
-    """Refuse an invalid --persona / $GHOST_PERSONA before anything is written.
+    """Refuse an invalid --persona / $SNOW_PERSONA before anything is written.
 
     STATE_DIR is derived from the persona name (state/personas/<name>/) before
     any validation runs, so an unchecked name containing '/' or '..' is a path
-    traversal: `sudo ghost --persona ../../tmp/x engage` would scatter
+    traversal: `sudo snow --persona ../../tmp/x engage` would scatter
     journal.json into arbitrary root-writable directories. Persona names are
     alphanumeric + dash + underscore — the same rule `persona create` enforces.
     """
@@ -77,8 +77,8 @@ VERSION = "0.6.1"
 # reachable in the clear (operator's control plane: chat, comms, sync, API).
 # Pinned to current A records at engage time and inserted as a clearnet
 # bypass in transproxy + killswitch. Override at run time with --target-fqdn
-# or persistently via the GHOST_TARGET_FQDN environment variable.
-DEFAULT_TARGET_FQDNS = os.environ.get("GHOST_TARGET_FQDN", "")
+# or persistently via the SNOW_TARGET_FQDN environment variable.
+DEFAULT_TARGET_FQDNS = os.environ.get("SNOW_TARGET_FQDN", "")
 
 
 def _resolve_fqdns(fqdns: list[str]) -> dict[str, list[str]]:
@@ -131,7 +131,7 @@ def _resolve_fqdns(fqdns: list[str]) -> dict[str, list[str]]:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    banner("GHOST :: status")
+    banner("SNOW :: status")
     active = persona.current()
     print(color(f"persona: {active}", "cyan"))
     if not persona.is_default(active):
@@ -166,7 +166,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    banner("GHOST :: doctor")
+    banner("SNOW :: doctor")
     iface = args.iface or _default_iface()
     rv = doctor.run(iface=iface)
     # Persona-aware extra check: if non-default, the netns must exist.
@@ -177,7 +177,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             log(f"persona '{active}' netns present at {netns.ns_name(active)}", "ok")
         else:
             log(f"persona '{active}' selected but netns does NOT exist. "
-                f"Run `sudo ghost persona create {active}` before engage.", "err")
+                f"Run `sudo snow persona create {active}` before engage.", "err")
             rv = 1
     return rv
 
@@ -185,7 +185,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 def cmd_circuit(_args: argparse.Namespace) -> int:
     """Show current Tor circuits (guard / middle / exit) via ControlPort."""
     require_root()
-    banner("GHOST :: circuit")
+    banner("SNOW :: circuit")
     circuits = tor.get_circuits()
     if not circuits:
         log("no circuits visible (Tor not engaged, or ControlPort unreachable)", "warn")
@@ -206,17 +206,17 @@ def cmd_circuit(_args: argparse.Namespace) -> int:
 
 
 def _schedule_autorestore(duration_seconds: int) -> str:
-    """Schedule a one-shot `ghost restore` via systemd-run. Returns the
+    """Schedule a one-shot `snow restore` via systemd-run. Returns the
     transient unit name so restore can cancel it on early teardown."""
     import secrets
-    unit = f"ghost-autorestore-{int(time.time())}-{secrets.token_hex(3)}"
-    ghost_bin = "/usr/local/bin/ghost"
-    if not Path(ghost_bin).exists():
+    unit = f"snow-autorestore-{int(time.time())}-{secrets.token_hex(3)}"
+    snow_bin = "/usr/local/bin/snow"
+    if not Path(snow_bin).exists():
         # development run from cloned dir
-        ghost_bin = str(ROOT / "ghost.py")
+        snow_bin = str(ROOT / "snow.py")
     from modules.util import sh
     cp = sh(["systemd-run", "--on-active=" + str(duration_seconds) + "s",
-             "--unit=" + unit, ghost_bin, "restore"], check=False)
+             "--unit=" + unit, snow_bin, "restore"], check=False)
     if cp.returncode != 0:
         log(f"failed to schedule autorestore via systemd-run (rc={cp.returncode})", "warn")
         return ""
@@ -227,9 +227,9 @@ def _schedule_autorestore(duration_seconds: int) -> str:
 
 
 def cmd_engage(args: argparse.Namespace) -> int:
-    """Full ghost mode: chain every module in the safe order."""
+    """Full snow mode: chain every module in the safe order."""
     require_root()
-    banner("GHOST :: ENGAGE" + ("  [+target bypass]" if args.target else "")
+    banner("SNOW :: ENGAGE" + ("  [+target bypass]" if args.target else "")
            + ("  [DRY-RUN]" if args.dry_run else ""))
     iface = args.iface or _default_iface()
 
@@ -262,13 +262,13 @@ def cmd_engage(args: argparse.Namespace) -> int:
         upstream_spec = f"tor:exit_country={args.exit_country}"
 
     # Persona resolution — non-default personas need a pre-existing netns
-    # (created via `ghost persona create <name>`). Pass through to upstream
+    # (created via `snow persona create <name>`). Pass through to upstream
     # so e.g. Tor knows to bind per-persona ports.
     active_persona = persona.current()
     if not persona.is_default(active_persona):
         if not netns.netns_exists(active_persona):
             log(f"persona '{active_persona}' has no netns. "
-                f"Run `sudo ghost persona create {active_persona}` first.", "err")
+                f"Run `sudo snow persona create {active_persona}` first.", "err")
             return 1
         log(f"persona: {active_persona} (netns={netns.ns_name(active_persona)})")
     else:
@@ -342,7 +342,7 @@ def cmd_engage(args: argparse.Namespace) -> int:
     if not upstream.start():
         log(f"upstream {upstream.name} failed to start — REFUSING to arm the kill-switch "
             "(would brick all outbound)", "err")
-        log("Run `ghost restore` to undo MAC/host/IPv6 changes, then investigate the upstream.", "warn")
+        log("Run `snow restore` to undo MAC/host/IPv6 changes, then investigate the upstream.", "warn")
         return 1
 
     if args.target:
@@ -390,16 +390,16 @@ def cmd_engage(args: argparse.Namespace) -> int:
             leak_detail = "; ".join(leaks)
         elif upstream.name == "tor" and not result.tor_confirmed:
             log("Tor exit not yet confirmed (circuit may still be building). "
-                "Re-run `ghost leaktest` to confirm before doing anything "
+                "Re-run `snow leaktest` to confirm before doing anything "
                 "sensitive.", "warn")
     else:
         # The operator's apps run inside the persona's netns — verify THERE,
-        # not in the host netns. Re-invoke `ghost leaktest` inside the ns;
+        # not in the host netns. Re-invoke `snow leaktest` inside the ns;
         # cmd_leaktest exits non-zero on a hard leak.
         time.sleep(3)
         log(f"verifying inside the netns for persona '{active_persona}'")
         rc = netns.exec_in(active_persona,
-                           ["python3", str(ROOT / "ghost.py"),
+                           ["python3", str(ROOT / "snow.py"),
                             "--persona", active_persona, "leaktest"])
         hard_leak = (rc != 0)
         leak_detail = "see the in-netns leak report above"
@@ -408,7 +408,7 @@ def cmd_engage(args: argparse.Namespace) -> int:
     # is exposed RIGHT NOW — engage must NOT report success or open a browser.
     if hard_leak:
         log("HARD LEAK DETECTED — you are NOT anonymous: " + leak_detail, "err")
-        log("NOT launching the browser. Run `ghost restore` now, then investigate "
+        log("NOT launching the browser. Run `snow restore` now, then investigate "
             "the leak before doing anything sensitive on this box.", "err")
         print(color("\n[x] ENGAGE FAILED VERIFICATION — leak detected (see leak report above)", "red"))
         return 1
@@ -428,13 +428,13 @@ def cmd_engage(args: argparse.Namespace) -> int:
             browser.launch(skip_gates=True)
         else:
             log("Mullvad Browser not found — skipping auto-launch. "
-                "Set $GHOST_BROWSER or install it. Suppress this with --no-browser.", "warn")
+                "Set $SNOW_BROWSER or install it. Suppress this with --no-browser.", "warn")
 
     if args.target:
-        print(color(f"\n[+] ghost mode active (target bypass: {','.join(target_pins.keys())})", "green"))
+        print(color(f"\n[+] snow mode active (target bypass: {','.join(target_pins.keys())})", "green"))
         print(color("    Those FQDNs travel clearnet to their pinned IPs — everything else is forced through Tor.", "yellow"))
     else:
-        print(color("\n[+] ghost mode active — run `ghost rotate` for a new circuit, `ghost restore` to revert", "green"))
+        print(color("\n[+] snow mode active — run `snow rotate` for a new circuit, `snow restore` to revert", "green"))
     return 0
 
 
@@ -447,7 +447,7 @@ def cmd_rotate(_args: argparse.Namespace) -> int:
 
 
 def cmd_leaktest(args: argparse.Namespace) -> int:
-    # Exit non-zero on a hard leak so `ghost leaktest` is usable as a gate
+    # Exit non-zero on a hard leak so `snow leaktest` is usable as a gate
     # in scripts and so engage can verify a persona's netns via this path.
     result = leaktest.run(quick=args.quick)
     return 1 if result.hard_leak else 0
@@ -476,14 +476,14 @@ def cmd_baseline(args: argparse.Namespace) -> int:
 
 
 def cmd_browser(args: argparse.Namespace) -> int:
-    """Launch Mullvad Browser, gated on ghost being engaged and egress healthy."""
+    """Launch Mullvad Browser, gated on snow being engaged and egress healthy."""
     return browser.launch(extra_args=args.browser_args)
 
 
 def cmd_persona(args: argparse.Namespace) -> int:
     """Persona management: create, delete, list."""
     if args.persona_cmd == "list":
-        banner("GHOST :: personas")
+        banner("SNOW :: personas")
         persona.render(persona.list_all())
         return 0
     if args.persona_cmd == "create":
@@ -505,7 +505,7 @@ def cmd_persona(args: argparse.Namespace) -> int:
         require_root()
         if not netns.netns_exists(args.name):
             log(f"netns for persona '{args.name}' does not exist. "
-                f"Run `sudo ghost persona create {args.name}` first.", "err")
+                f"Run `sudo snow persona create {args.name}` first.", "err")
             return 1
         log(f"entering netns for persona '{args.name}' — exit to return to host shell")
         return netns.exec_in(args.name, [args.shell])
@@ -514,8 +514,8 @@ def cmd_persona(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(prog="ghost", description="Anonymity / OPSEC toolkit for Kali")
-    p.add_argument("-v", "--version", action="version", version=f"ghost {VERSION}")
+    p = argparse.ArgumentParser(prog="snow", description="Anonymity / OPSEC toolkit for Kali")
+    p.add_argument("-v", "--version", action="version", version=f"snow {VERSION}")
     p.add_argument("--dry-run", action="store_true",
                    help="print intended subprocess calls without executing them. "
                         "Note: file writes (journal, baseline) still happen; this is "
@@ -525,8 +525,8 @@ def main() -> int:
     # actually steers util.STATE_DIR.
     p.add_argument("--persona", default=None,
                    help="select operating persona (state isolated under state/personas/<name>/). "
-                        "Default = 'default' (legacy state/ dir). Use `ghost persona list` to see "
-                        "available personas, `ghost persona create <name>` to make one.")
+                        "Default = 'default' (legacy state/ dir). Use `snow persona list` to see "
+                        "available personas, `snow persona create <name>` to make one.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("status",   help="show current network identity + journal")
@@ -539,7 +539,7 @@ def main() -> int:
     s.add_argument("--iface", default=None, help="network iface (default: auto-detect)")
     s.set_defaults(fn=cmd_doctor)
 
-    s = sub.add_parser("engage",   help="enable full ghost mode")
+    s = sub.add_parser("engage",   help="enable full snow mode")
     s.add_argument("--iface", default=None, help="network iface (default: auto-detect)")
     s.add_argument("--lan", default="",
                    help="comma-separated LAN CIDR(s) to bypass (default: auto-detect from iface)")
@@ -549,7 +549,7 @@ def main() -> int:
                         "Trade: those endpoints see your real source IP.")
     s.add_argument("--target-fqdn", default=DEFAULT_TARGET_FQDNS,
                    help="comma-separated FQDNs to pin + bypass when --target is set. "
-                        "Falls back to $GHOST_TARGET_FQDN. Example: "
+                        "Falls back to $SNOW_TARGET_FQDN. Example: "
                         "--target-fqdn signal.org,api.signal.org")
     s.add_argument("--upstream", default=None,
                    help="egress mechanism: 'tor' (default), 'tor:exit_country=us,ca', "
@@ -569,7 +569,7 @@ def main() -> int:
                         "what's failing and have already accepted it.")
     s.add_argument("--no-browser", action="store_true",
                    help="don't auto-launch Mullvad Browser after engage completes "
-                        "(by default ghost launches it if found, dropping privileges "
+                        "(by default snow launches it if found, dropping privileges "
                         "to the invoking user via SUDO_USER).")
     s.set_defaults(fn=cmd_engage)
 

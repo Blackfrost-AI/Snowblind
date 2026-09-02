@@ -6,10 +6,10 @@ ACCEPT list. Pinning ensures the same IPs we whitelisted are the ones libc
 hands to the app.
 
 Block format in /etc/hosts:
-    # ghost-target-bypass BEGIN
+    # snow-target-bypass BEGIN
     <ip> <fqdn>
     ...
-    # ghost-target-bypass END
+    # snow-target-bypass END
 """
 from __future__ import annotations
 
@@ -21,12 +21,12 @@ from .util import backup_path, journal_append, journal_has, log, write_system_fi
 
 HOSTS = Path("/etc/hosts")
 HOSTS_BACKUP = backup_path("hosts.save")
-MARK_BEGIN = "# ghost-target-bypass BEGIN"
-MARK_END = "# ghost-target-bypass END"
+MARK_BEGIN = "# snow-target-bypass BEGIN"
+MARK_END = "# snow-target-bypass END"
 
 # /etc/hosts is whitespace-delimited, so a name containing whitespace would
 # inject extra columns (or, with a newline, whole extra entries). Pin names
-# are re-validated here even though ghost.py gates them — defense in depth
+# are re-validated here even though snow.py gates them — defense in depth
 # for anything that calls pin() directly.
 _FQDN_RE = re.compile(
     r"^(?=.{1,253}\Z)"
@@ -55,7 +55,7 @@ def pin(fqdn_to_ips: dict[str, list[str]]) -> None:
     if not fqdn_to_ips:
         return
     if journal_has("hostsfile", "pin"):
-        log("hostsfile already pinned — skipping (use `ghost restore` first)", "warn")
+        log("hostsfile already pinned — skipping (use `snow restore` first)", "warn")
         return
 
     # Snapshot once. If we already have a backup from a prior incomplete run,

@@ -10,7 +10,7 @@ from . import ipv6
 from .util import baseline_save, is_dry_run, log, sh
 
 # Generic UA so probes from this tool don't fingerprint the toolkit at the
-# destination (the prior "ghost/0.1" was an easy correlation tag).
+# destination (a toolkit-identifying UA like "snow/0.1" would be an easy correlation tag).
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 
 

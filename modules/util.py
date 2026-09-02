@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------------
 # Persona-aware state directory resolution (v0.6.0)
 # ---------------------------------------------------------------------------
-# Active persona comes from $GHOST_PERSONA, set by ghost.py BEFORE this
+# Active persona comes from $SNOW_PERSONA, set by snow.py BEFORE this
 # module is first imported (pre-parsed from --persona on sys.argv). The
 # 'default' persona uses the legacy state/ path for backward compatibility
 # with installations created before v0.6.0; named personas live under
@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # via `from .util import STATE_DIR, JOURNAL, BASELINE, BACKUPS_DIR`.
 # ---------------------------------------------------------------------------
 
-_PERSONA = os.environ.get("GHOST_PERSONA", "default")
+_PERSONA = os.environ.get("SNOW_PERSONA", "default")
 
 if _PERSONA == "default":
     STATE_DIR = ROOT / "state"
@@ -84,7 +84,7 @@ def write_system_file(path, text: str, mode: int | None = None) -> None:
         return
     target = p.resolve() if p.is_symlink() else p
     perm = mode if mode is not None else 0o644
-    tmp = target.with_name(target.name + ".ghost-tmp")
+    tmp = target.with_name(target.name + ".snow-tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, perm)
     try:
         with os.fdopen(fd, "w") as f:
@@ -116,7 +116,7 @@ def make_system_dir(path, mode: int | None = None) -> None:
 
 def backup_path(name: str) -> Path:
     """Stable per-module backup file under state/backups/. Survives reboot
-    (state/ lives next to ghost.py); /tmp is tmpfs and would lose this."""
+    (state/ lives next to snow.py); /tmp is tmpfs and would lose this."""
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     return BACKUPS_DIR / name
 
@@ -199,7 +199,7 @@ def log(msg: str, level: str = "info") -> None:
 
 def require_root() -> None:
     if os.geteuid() != 0:
-        log("must run as root (try: sudo ghost ...)", "err")
+        log("must run as root (try: sudo snow ...)", "err")
         sys.exit(1)
 
 

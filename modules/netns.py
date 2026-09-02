@@ -6,9 +6,9 @@ in this namespace — their network stack is fully separate from the host's
 (own loopback, own routing table, own iptables rules).
 
 Architecture (per persona <P>):
-    host netns                                  ghost-ns-<P>
+    host netns                                  snow-ns-<P>
     +----------+         veth pair         +----------+
-    | gv-<P>-h |<------------------------->| gv-<P>-n |
+    | sv-<P>-h |<------------------------->| sv-<P>-n |
     | 10.x.y.1 |                           | 10.x.y.2 |
     +----------+                           +----------+
        |                                       |
@@ -50,8 +50,8 @@ from pathlib import Path
 
 from .util import ROOT, journal_append, journal_has, log, sh
 
-NS_PREFIX = "ghost-ns-"
-VETH_PREFIX = "gv-"  # 'gv' = ghost-veth, short enough to fit Linux's 15-char iface name limit
+NS_PREFIX = "snow-ns-"
+VETH_PREFIX = "sv-"  # 'sv' = snow-veth, short enough to fit Linux's 15-char iface name limit
 NETNS_RUN = Path("/var/run/netns")
 NETNS_CONF = Path("/etc/netns")   # /etc/netns/<ns>/resolv.conf hosted here per ns
 
@@ -74,8 +74,8 @@ def _veth_names(persona: str) -> tuple[str, str]:
     """Return (host_side_iface, ns_side_iface) names.
 
     Linux limit: 15 chars max. Persona names are validated <= 32 chars so
-    we hash them down for the iface name. Host side = 'gv-<8hex>-h',
-    ns side = 'gv-<8hex>-n'. The 8-hex prefix is deterministic per persona.
+    we hash them down for the iface name. Host side = 'sv-<8hex>-h',
+    ns side = 'sv-<8hex>-n'. The 8-hex prefix is deterministic per persona.
     """
     tag = hashlib.sha256(persona.encode()).hexdigest()[:8]
     return f"{VETH_PREFIX}{tag}-h", f"{VETH_PREFIX}{tag}-n"
@@ -154,7 +154,7 @@ def create(persona: str) -> dict:
     veth_h, veth_n = _veth_names(persona)
 
     if netns_exists(persona):
-        log(f"netns {nsn} already exists — skipping (use `ghost persona delete` to tear down first)",
+        log(f"netns {nsn} already exists — skipping (use `snow persona delete` to tear down first)",
             "warn")
         return {"ns_name": nsn, "veth_host": veth_h, "veth_ns": veth_n, **sub,
                 "already_existed": True}
@@ -212,13 +212,13 @@ def create(persona: str) -> dict:
     # 8. NAT MASQUERADE so persona traffic egresses via the host's default iface
     sh(["iptables", "-t", "nat", "-A", "POSTROUTING",
         "-s", sub["cidr"], "-o", host_ext, "-j", "MASQUERADE",
-        "-m", "comment", "--comment", f"ghost-netns-{persona}"])
+        "-m", "comment", "--comment", f"snow-netns-{persona}"])
     sh(["iptables", "-A", "FORWARD",
         "-i", veth_h, "-j", "ACCEPT",
-        "-m", "comment", "--comment", f"ghost-netns-{persona}"])
+        "-m", "comment", "--comment", f"snow-netns-{persona}"])
     sh(["iptables", "-A", "FORWARD",
         "-o", veth_h, "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT",
-        "-m", "comment", "--comment", f"ghost-netns-{persona}"])
+        "-m", "comment", "--comment", f"snow-netns-{persona}"])
 
     # 9. Per-ns DNS — point at the host gateway (where Tor's DNSPort will
     #    bind in alpha3 once engage is netns-aware).
@@ -259,7 +259,7 @@ def delete(persona: str) -> None:
 
     else:
         # 1. Remove NAT + FORWARD rules (use --comment match to find ours)
-        comment = f"ghost-netns-{persona}"
+        comment = f"snow-netns-{persona}"
         if host_ext:
             sh(["iptables", "-t", "nat", "-D", "POSTROUTING",
                 "-s", sub["cidr"], "-o", host_ext, "-j", "MASQUERADE",
@@ -289,7 +289,7 @@ def delete(persona: str) -> None:
         except OSError as e:
             log(f"could not fully clean {ns_conf_dir}: {e}", "warn")
 
-    # If this was the last ghost-managed netns, restore the host's original
+    # If this was the last snow-managed netns, restore the host's original
     # net.ipv4.ip_forward value (snapshotted by the first create()).
     if not list_active() and _IPFWD_ORIG.exists():
         orig = _IPFWD_ORIG.read_text().strip() or "0"
@@ -310,7 +310,7 @@ def delete(persona: str) -> None:
 def exec_in(persona: str, argv: list[str]) -> int:
     """Run a command inside the persona's netns. Returns exit code.
 
-    Used by the browser launcher (alpha3) and the `ghost persona shell`
+    Used by the browser launcher (alpha3) and the `snow persona shell`
     convenience command.
     """
     if not is_valid_persona_for_netns(persona):
@@ -319,7 +319,7 @@ def exec_in(persona: str, argv: list[str]) -> int:
         return cp.returncode
     if not netns_exists(persona):
         log(f"netns for persona '{persona}' does not exist — run "
-            f"`sudo ghost persona create {persona}` first", "err")
+            f"`sudo snow persona create {persona}` first", "err")
         return 1
     cp = subprocess.run(["ip", "netns", "exec", ns_name(persona)] + list(argv), check=False)
     return cp.returncode
@@ -426,7 +426,7 @@ def setup_internal_routing(persona: str, dns_port: int, trans_port: int) -> None
 
 
 def list_active() -> list[dict]:
-    """All ghost-managed netns currently present, with their persona name
+    """All snow-managed netns currently present, with their persona name
     and subnet info. Independent of state-dir presence (in case netns was
     created but state dir was deleted)."""
     out: list[dict] = []

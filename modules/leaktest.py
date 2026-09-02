@@ -55,10 +55,10 @@ def _socks_host() -> str:
     persona's netns, 127.0.0.1 is the netns's own loopback — Tor is reached
     on the persona's gateway IP instead (modules/tor.py binds the per-persona
     gateway in write_config). A leak test invoked inside the netns
-    (`ip netns exec ... ghost --persona X leaktest`) must target the gateway,
+    (`ip netns exec ... snow --persona X leaktest`) must target the gateway,
     or it would always report Tor UNREACHABLE.
     """
-    persona = os.environ.get("GHOST_PERSONA", "default")
+    persona = os.environ.get("SNOW_PERSONA", "default")
     if persona == "default":
         return "127.0.0.1"
     try:
@@ -236,7 +236,7 @@ def run(quick: bool = False) -> LeakResult:
     # Tor exit check — only meaningful when Tor is (part of) the upstream.
     # A WireGuard engage has no SOCKS port; running the check would print a
     # misleading red 'UNREACHABLE via SOCKS'. 'unknown' still runs it (a
-    # standalone `ghost leaktest` with no journal defaults to the Tor view).
+    # standalone `snow leaktest` with no journal defaults to the Tor view).
     if upstream in ("tor", "chain", "unknown"):
         tor_info = _check_tor_exit()
         if tor_info.get("IsTor") is True:
@@ -302,11 +302,11 @@ def run(quick: bool = False) -> LeakResult:
 
     print(color("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "cyan"))
     if result.hard_leak:
-        print(color("  VERDICT: HARD LEAK — you are NOT anonymous. Run `ghost restore`.\n", "red"))
+        print(color("  VERDICT: HARD LEAK — you are NOT anonymous. Run `snow restore`.\n", "red"))
     elif result.clearnet_unverified:
         print(color("  VERDICT: no hard leak PROVEN, but the clearnet check is "
-                    "unverified (no baseline IP). Re-run `sudo ghost engage` "
-                    "(it captures a fresh baseline) or `ghost baseline` "
+                    "unverified (no baseline IP). Re-run `sudo snow engage` "
+                    "(it captures a fresh baseline) or `snow baseline` "
                     "before trusting this result.\n", "yellow"))
     else:
         print(color("  VERDICT: no hard leak detected.\n", "green"))

@@ -14,7 +14,7 @@ def _stop_upstream(entry: dict) -> None:
     if subtype == "tor":
         tor.stop()
     elif subtype == "wireguard":
-        iface = entry.get("iface", "ghost-wg")
+        iface = entry.get("iface", "snow-wg")
         sh(["wg-quick", "down", iface], check=False)
         log(f"WG stopped ({iface})", "ok")
     else:
@@ -24,10 +24,10 @@ def _stop_upstream(entry: dict) -> None:
 def rollback() -> None:
     if journal_is_corrupt():
         log("journal file is CORRUPT (invalid JSON) — restore has nothing to "
-            "replay from it. If the box is still engaged (check `ghost "
-            "status` / `iptables -nL ghost-killswitch`), undo manually: "
+            "replay from it. If the box is still engaged (check `snow "
+            "status` / `iptables -nL snow-killswitch`), undo manually: "
             "`iptables -P OUTPUT ACCEPT && iptables -D OUTPUT 1` plus "
-            "ip6tables policies, wg-quick down ghost-wg, and pkill the tor "
+            "ip6tables policies, wg-quick down snow-wg, and pkill the tor "
             "instance. Do NOT delete the corrupt file — it's evidence.", "err")
         return
     entries = journal_load()
@@ -69,7 +69,7 @@ def rollback() -> None:
                 elif act == "configure":
                     # Remove the generated torrc and — importantly — the
                     # plaintext ControlPort password file. Leaving
-                    # /etc/tor/ghost_control_pw on disk after restore is a
+                    # /etc/tor/snow_control_pw on disk after restore is a
                     # stale secret; a fresh engage regenerates both anyway.
                     for stale in (tor.CONTROL_PW_FILE, tor.TORRC):
                         try:
@@ -86,10 +86,10 @@ def rollback() -> None:
                 if act == "internal_routing":
                     # Flush persona-netns iptables back to permissive default.
                     # Netns itself stays (persisted across engage/restore cycles;
-                    # only `ghost persona delete` tears the namespace down).
+                    # only `snow persona delete` tears the namespace down).
                     netns.teardown_internal_routing(e.get("persona", ""))
                 # action=create / action=delete entries are informational —
-                # ns lifecycle is owned by `ghost persona create/delete`, not
+                # ns lifecycle is owned by `snow persona create/delete`, not
                 # by engage/restore.
             elif mod == "ipv6" and act == "disable":
                 ipv6.enable(e.get("previous"))
@@ -104,12 +104,12 @@ def rollback() -> None:
     # Only clear the journal on a fully clean restore. If a revert failed, the
     # journal is the record of what still needs undoing — wiping it would
     # strand the operator (e.g. a failed killswitch.revert() leaves OUTPUT
-    # policy DROP with nothing left to replay). Keep it so `ghost restore` can
+    # policy DROP with nothing left to replay). Keep it so `snow restore` can
     # be re-run after the operator investigates.
     if failures:
         log(f"{failures} revert(s) FAILED — keeping the journal so you can re-run "
-            f"`ghost restore` after investigating. The box may be in a partial "
-            f"state; check with `ghost status` and `ghost leaktest`.", "err")
+            f"`snow restore` after investigating. The box may be in a partial "
+            f"state; check with `snow status` and `snow leaktest`.", "err")
     else:
         journal_clear()
         log("restore complete — journal cleared", "ok")

@@ -11,7 +11,7 @@
 **Linux anonymity / OPSEC toolkit by [Blackfrost-AI](https://github.com/Blackfrost-AI).
 One command to turn a Linux host into an anonymous-by-default Tor client with a
 kill switch, and one command to verify it actually works.** The project ships a
-single CLI: `ghost`. Authorized use only — on systems you own or have written
+single CLI: `snow`. Authorized use only — on systems you own or have written
 permission to test. See [ACCEPTABLE_USE.md](ACCEPTABLE_USE.md).
 
 ## What it does
@@ -39,8 +39,8 @@ cd Snowblind
 sudo bash install.sh
 ```
 
-The install also drops `/etc/tmpfiles.d/ghost-tor.conf` so `/run/tor` is
-recreated on every boot. ghost disables the system `tor.service` (to free
+The install also drops `/etc/tmpfiles.d/snow-tor.conf` so `/run/tor` is
+recreated on every boot. Snowblind disables the system `tor.service` (to free
 Tor's port for its own instance), and that service is what normally creates
 `/run/tor` — without the tmpfiles drop, Tor would fail to write its PidFile
 on the next reboot and bootstrap would silently time out.
@@ -51,37 +51,37 @@ Tested on Kali / Debian-family with systemd, NetworkManager, and netfilter
 ## Usage
 
 ```bash
-sudo ghost doctor                # pre-flight checks — run this before engage
-sudo ghost status                # current MAC / hostname / public IP / IPv6 / DNS / journal
-sudo ghost engage                # full lockdown: every byte through Tor or dropped
-sudo ghost engage --target \
+sudo snow doctor                # pre-flight checks — run this before engage
+sudo snow status                # current MAC / hostname / public IP / IPv6 / DNS / journal
+sudo snow engage                # full lockdown: every byte through Tor or dropped
+sudo snow engage --target \
      --target-fqdn signal.org    # same, but signal.org travels clearnet (see below)
-sudo ghost engage \
+sudo snow engage \
      --upstream wg:mullvad-se \  # WireGuard egress instead of Tor
      --duration 4h               # auto-restore after 4 hours via systemd-run
-sudo ghost engage \
+sudo snow engage \
      --upstream chain:wg=mullvad-se,tor   # WG then Tor on top (residential-VPN-fronted Tor)
-sudo ghost circuit               # show current guard/middle/exit hops (Tor upstream only)
-sudo ghost leaktest              # IsTor=true, clearnet blocked, IPv6 off, DNS via Tor
-sudo ghost rotate                # request fresh circuit / new exit node
-sudo ghost browser               # launch Mullvad Browser (refuses unless engaged)
-sudo ghost restore               # journal replay; box back to pristine state
-sudo ghost --dry-run engage      # preview the iptables/sysctl calls without firing them
+sudo snow circuit               # show current guard/middle/exit hops (Tor upstream only)
+sudo snow leaktest              # IsTor=true, clearnet blocked, IPv6 off, DNS via Tor
+sudo snow rotate                # request fresh circuit / new exit node
+sudo snow browser               # launch Mullvad Browser (refuses unless engaged)
+sudo snow restore               # journal replay; box back to pristine state
+sudo snow --dry-run engage      # preview the iptables/sysctl calls without firing them
 ```
 
-### `ghost browser` and auto-launch on engage
+### `snow browser` and auto-launch on engage
 
-`sudo ghost engage` auto-launches Mullvad Browser as its final step (step 9/8)
+`sudo snow engage` auto-launches Mullvad Browser as its final step (step 9/8)
 if a Mullvad Browser binary is found on the box. Suppress with `--no-browser`.
 
-`sudo ghost browser` launches it standalone, gated on:
-1. ghost is engaged (journal contains an active engage)
+`sudo snow browser` launches it standalone, gated on:
+1. Snowblind is engaged (journal contains an active engage)
 2. A quick egress check passes (SOCKS reachable)
 
-**Privilege drop:** when ghost runs under `sudo` (it has to, for iptables/
+**Privilege drop:** when Snowblind runs under `sudo` (it has to, for iptables/
 sysctl), the browser cannot inherit the root environment — `sudo` strips
 `DISPLAY` and `XAUTHORITY`, so a root-spawned browser silently fails to
-find the X server. ghost detects `SUDO_USER`, reconstructs the user's
+find the X server. Snowblind detects `SUDO_USER`, reconstructs the user's
 session env (`DISPLAY` from `who`, `XAUTHORITY` from `~/.Xauthority`,
 `XDG_RUNTIME_DIR`/`WAYLAND_DISPLAY`/`DBUS_SESSION_BUS_ADDRESS` from
 `/run/user/<uid>/`), and drops privileges to that user via `preexec_fn`
@@ -89,10 +89,10 @@ before exec'ing the browser.
 
 **Browser logs:** stdout and stderr land at `state/logs/browser-stdout.log`
 and `browser-stderr.log` (NOT `/dev/null`, which is the right answer for a
-"silently fails" debug story). If the browser exits within 2s, ghost
+"silently fails" debug story). If the browser exits within 2s, Snowblind
 surfaces the last 15 lines of stderr.
 
-Override the binary path with `$GHOST_BROWSER`. Default search:
+Override the binary path with `$SNOW_BROWSER`. Default search:
 `~/.local/share/mullvad-browser/Browser/start-mullvad-browser`, then
 `~/mullvad-browser/...`, then `/opt/mullvad-browser/...`, then `$PATH`.
 Under sudo, `~` is expanded against `SUDO_USER`'s `$HOME`, not `/root`.
@@ -105,29 +105,29 @@ and engagement B can be operated from the same physical box without
 cross-contaminating either bookkeeping or kernel network state.
 
 ```bash
-sudo ghost persona create acme-h1     # state dir + netns + veth + NAT MASQUERADE
-sudo ghost persona list               # show all personas, current selection, ENGAGED flag
+sudo snow persona create acme-h1     # state dir + netns + veth + NAT MASQUERADE
+sudo snow persona list               # show all personas, current selection, ENGAGED flag
 
 # operate under a persona
-sudo ghost --persona acme-h1 engage   # Tor binds per-persona gateway ports
-sudo ghost --persona acme-h1 browser  # Mullvad Browser launches inside the netns
-sudo ghost --persona acme-h1 leaktest
-sudo ghost --persona acme-h1 restore  # unwind iptables/sysctl; netns persists
+sudo snow --persona acme-h1 engage   # Tor binds per-persona gateway ports
+sudo snow --persona acme-h1 browser  # Mullvad Browser launches inside the netns
+sudo snow --persona acme-h1 leaktest
+sudo snow --persona acme-h1 restore  # unwind iptables/sysctl; netns persists
 
 # investigate inside the netns
-sudo ghost persona shell acme-h1      # drops into bash inside the namespace
+sudo snow persona shell acme-h1      # drops into bash inside the namespace
 # inside: `ip addr`, `ip route`, `curl https://check.torproject.org/api/ip`
 
 # tear it down
-sudo ghost persona delete acme-h1     # refuses if active journal; --force overrides
+sudo snow persona delete acme-h1     # refuses if active journal; --force overrides
 ```
 
 **Architecture per non-default persona:**
 
 ```
-host netns                              ghost-ns-acme-h1
+host netns                              snow-ns-acme-h1
 +----------+    veth pair          +----------+
-| gv-xx-h  |<--------------------->| gv-xx-n  |    apps:
+| sv-xx-h  |<--------------------->| sv-xx-n  |    apps:
 | 10.x.y.1 |                       | 10.x.y.2 |    - Mullvad Browser
 +----------+                       +----------+    - curl, dig, etc.
    |                                   |
@@ -185,19 +185,19 @@ engagements — pass a different upstream:
 
 ```bash
 # default Tor (same as before)
-sudo ghost engage
+sudo snow engage
 
 # Tor with exit pinned to specific countries
-sudo ghost engage --upstream "tor:exit_country=us,ca"
+sudo snow engage --upstream "tor:exit_country=us,ca"
 
 # WireGuard — operator-supplied wg-quick config
 sudo cp ~/Downloads/mullvad-se.conf /etc/wireguard/mullvad-se.conf
-sudo ghost engage --upstream wg:mullvad-se
+sudo snow engage --upstream wg:mullvad-se
 #                 ^^^^^^^^^^^^^^^^^^^^^^^^^
 #                 resolves /etc/wireguard/mullvad-se.conf
 
 # WireGuard via absolute path
-sudo ghost engage --upstream wg:/etc/wireguard/ivpn-de.conf
+sudo snow engage --upstream wg:/etc/wireguard/ivpn-de.conf
 ```
 
 The kill-switch, journal, restore, and target-FQDN-bypass discipline is
@@ -206,7 +206,7 @@ identical regardless of upstream. Only the egress mechanism varies:
 | Upstream | Egress mechanism | Killswitch authorizes | Transproxy |
 |---|---|---|---|
 | `tor` (default) | local Tor daemon on 9040/5353 | `--uid-owner debian-tor` | TCP-SYN → 9040, DNS → 5353 |
-| `wg:<name>` | wg-quick on iface `ghost-wg` | `-o ghost-wg` | skipped (kernel routes handle it) |
+| `wg:<name>` | wg-quick on iface `snow-wg` | `-o snow-wg` | skipped (kernel routes handle it) |
 
 **Trust tradeoff:** with WireGuard, the VPN provider sees your real IP and
 destinations. Provider matters — Mullvad/IVPN/AzireVPN have strong no-logs
@@ -215,9 +215,9 @@ records; budget providers may not. Pair with operator-anonymous payment.
 **Chain upstream — WG then Tor on top:**
 
 ```bash
-sudo ghost engage --upstream "chain:wg=mullvad-se,tor"
+sudo snow engage --upstream "chain:wg=mullvad-se,tor"
 # or with Tor exit pinning
-sudo ghost engage --upstream "chain:wg=mullvad-se,tor:exit_country=us"
+sudo snow engage --upstream "chain:wg=mullvad-se,tor:exit_country=us"
 ```
 
 The chain brings up WireGuard first, then starts Tor on top — Tor's
@@ -230,7 +230,7 @@ Tradeoff: stacked latency, and an adversary controlling *both* the VPN
 provider and the Tor guards can still correlate you. Don't use chain
 when Tor alone is the right egress; the VPN layer just costs latency.
 
-### `ghost doctor`
+### `snow doctor`
 
 Pre-flight read-only diagnostic. Surfaces every catchable cause of a broken
 engage *before* the kill-switch arms. `engage` runs doctor automatically and
@@ -249,34 +249,34 @@ module, IPv6 sysctl knobs present.
 — Tor will refuse to fall back to exits outside the listed countries. Useful when
 a program requires geo-bounded egress or you want to avoid specific jurisdictions.
 
-`--duration 4h` schedules a one-shot `ghost restore` via `systemd-run --on-active`
+`--duration 4h` schedules a one-shot `snow restore` via `systemd-run --on-active`
 to fire when the duration elapses. Forces shorter engaged windows = less
 correlation surface, prevents the "I forgot I was engaged and now my chat client
 has been confused for 12 hours" failure mode. Cancelled automatically on an
-earlier manual `ghost restore`.
+earlier manual `snow restore`.
 
-### `ghost circuit`
+### `snow circuit`
 
 Queries the ControlPort for current circuit status and prints the guard →
 middle → exit hops with relay nicknames. Useful for confirming `--exit-country`
-took effect, or for surfacing a stuck circuit before `ghost rotate`.
+took effect, or for surfacing a stuck circuit before `snow rotate`.
 
 ### `--dry-run`
 
 Global flag. When set, every subprocess call (iptables, sysctl, macchanger,
 hostnamectl, etc.) is printed in magenta with `[dry]` prefix and returns success
-without executing. System-file writes (`/etc/hosts`, `/etc/tor/torrc.ghost`,
+without executing. System-file writes (`/etc/hosts`, `/etc/tor/torrc.snow`,
 the ControlPort password file) and daemon starts (tor, wg-quick) are likewise
 printed and skipped — a dry run does not mutate the host or start anything.
 State-file writes under `state/` (journal, baseline) DO still happen, so a
-dry-run engage leaves a journal you should `ghost restore` after. This is
+dry-run engage leaves a journal you should `snow restore` after. This is
 "preview the network-level intent," not a full sandbox.
 
 ### Hash-chained journal (tamper-evident)
 
 Every `state/journal.json` entry carries `prev_hash` (the previous entry's
 `entry_hash`, or `"GENESIS"` for the first) and `entry_hash` (SHA-256 over the
-canonical JSON of the entry minus its own hash). `ghost status` and `ghost
+canonical JSON of the entry minus its own hash). `snow status` and `snow
 restore` both verify the chain; tampering with any historical entry breaks the
 chain at that index and surfaces a `!` warning. Restore proceeds anyway —
 operators running restore are usually recovering, not adjudicating.
@@ -292,10 +292,10 @@ Tor + kill-switch treatment.
 **Hole by hostname — `--target --target-fqdn`:**
 
 ```bash
-sudo ghost engage --target --target-fqdn chat.example.com,api.example.com
+sudo snow engage --target --target-fqdn chat.example.com,api.example.com
 # or persist via env
-export GHOST_TARGET_FQDN=api.example.com,sync.example.com
-sudo -E ghost engage --target
+export SNOW_TARGET_FQDN=api.example.com,sync.example.com
+sudo -E snow engage --target
 ```
 
 How it works:
@@ -313,8 +313,8 @@ refused.
 **Hole by subnet — `--lan`:**
 
 ```bash
-sudo ghost engage --lan 10.10.20.0/24              # one trusted lab subnet
-sudo ghost engage --lan 192.168.1.0/24,10.8.0.0/24 # home LAN + an overlay net
+sudo snow engage --lan 10.10.20.0/24              # one trusted lab subnet
+sudo snow engage --lan 192.168.1.0/24,10.8.0.0/24 # home LAN + an overlay net
 ```
 
 Use this when the thing you need lives on a private network — a self-hosted
@@ -339,12 +339,12 @@ engage. Bypass only endpoints that are *supposed* to know who you are — your
 own infrastructure, your team's comms. Never bypass the target you're
 testing, and prefer one narrow `--target-fqdn` over a wide `--lan`.
 
-`ghost restore` reverts the `/etc/hosts` pin from a journaled backup.
+`snow restore` reverts the `/etc/hosts` pin from a journaled backup.
 
 ## Architecture
 
 ```
-ghost.py              CLI dispatch + argparse + --persona pre-parse + dry-run plumbing
+snow.py              CLI dispatch + argparse + --persona pre-parse + dry-run plumbing
 modules/
   util.py             shell / log / hash-chained journal / persona-aware STATE_DIR /
                       colors / LAN-detect / dry-run / duration
@@ -364,9 +364,9 @@ modules/
     tor.py            Tor adapter (wraps modules/tor.py into Upstream interface)
     wireguard.py      WireGuard upstream (wg-quick, peer-handshake verification)
   hostsfile.py        /etc/hosts pin/unpin for --target FQDNs
-  transproxy.py       NAT redirects via named `ghost-trans` chain (upstream-aware;
+  transproxy.py       NAT redirects via named `snow-trans` chain (upstream-aware;
                       no-op for upstreams that route via kernel routes)
-  killswitch.py       filter DROP policy via named `ghost-killswitch` chain;
+  killswitch.py       filter DROP policy via named `snow-killswitch` chain;
                       authorizes by upstream UID and/or egress iface
                       (+ conntrack flush so pre-existing flows re-evaluate)
   rotate.py           NEWNYM over ControlPort
@@ -394,10 +394,10 @@ state/
 - The killswitch keeps LAN reachable on purpose so the host stays SSH-able.
   Pass `--lan ""` to disable LAN bypass entirely, or tighten with
   `--lan 192.168.50.0/24`.
-- **Tor Browser bundles its own Tor.** Running it while ghost is engaged
+- **Tor Browser bundles its own Tor.** Running it while Snowblind is engaged
   creates a Tor-over-Tor loop that breaks both. Use one or the other, not
   both. (Mullvad Browser is Tor Browser with the bundled tor stripped out —
-  pair that with ghost for fingerprint resistance + system-wide Tor.)
+  pair that with Snowblind for fingerprint resistance + system-wide Tor.)
 - **Pre-existing TCP connections are re-evaluated, not retroactively
   anonymized.** `engage` flushes the conntrack table (`conntrack -F`) so any
   open clearnet TCP flow has to re-establish through the new ruleset. If the
@@ -418,16 +418,16 @@ state/
   or by bringing wifi up only after MAC randomization.
 - **Forensic trace on the local host.** Every iptables, sysctl, and hostname
   change goes through systemd-journald / kern.log. If the threat model
-  includes someone with root on this box auditing what happened, ghost is
+  includes someone with root on this box auditing what happened, Snowblind is
   loud in the journal. This is an anti-surveillance tool, not anti-forensic.
 
 ## Recommended browser pairing
 
-Ghost owns the **network** layer (IP, DNS, IPv6, killswitch). It does **not** touch the **browser** layer where most fingerprinting happens — UA, screen, fonts, canvas, WebGL, WebRTC, audio context. Pair ghost with a browser that handles those, or your IP is hidden but your browser is still uniquely identifiable.
+Snowblind owns the **network** layer (IP, DNS, IPv6, killswitch). It does **not** touch the **browser** layer where most fingerprinting happens — UA, screen, fonts, canvas, WebGL, WebRTC, audio context. Pair Snowblind with a browser that handles those, or your IP is hidden but your browser is still uniquely identifiable.
 
 ### Best — Mullvad Browser  *(EFF Cover Your Tracks: non-unique, ~3M-user herd)*
 
-[Mullvad Browser](https://mullvad.net/en/browser) is Tor Browser stripped of its bundled tor, designed to run through an external proxy. Pair it with `sudo ghost engage --target`: ghost provides the Tor circuit, Mullvad Browser provides the Tor-Browser-quality fingerprint defense. You join the ~3-million-user Tor/Mullvad Browser herd.
+[Mullvad Browser](https://mullvad.net/en/browser) is Tor Browser stripped of its bundled tor, designed to run through an external proxy. Pair it with `sudo snow engage --target`: Snowblind provides the Tor circuit, Mullvad Browser provides the Tor-Browser-quality fingerprint defense. You join the ~3-million-user Tor/Mullvad Browser herd.
 
 ```bash
 V=15.0.12
@@ -452,31 +452,31 @@ user_pref("webgl.disabled", true);
 
 Familiar Firefox UX, full extension support, smaller herd than Mullvad. Note: RFP's `navigator.hardwareConcurrency=2` spoof and 13-font system list are stale in 2026 (most devices have 4+ cores; common font lists are shorter) — these axes actually *increase* uniqueness vs Mullvad Browser's choices. Expect "strong protection" but possibly "unique fingerprint" without further tuning.
 
-### Don't — Tor Browser while ghost is engaged
+### Don't — Tor Browser while Snowblind is engaged
 
-Tor Browser bundles its own tor instance. Running it alongside `sudo ghost engage` creates a Tor-over-Tor loop: Tor Browser's bundled tor tries to reach the real Tor network, but ghost's transproxy REDIRECTs that traffic into *ghost's* tor, which then tries to relay it. Bootstrap fails in both. Use Mullvad Browser if you want Tor Browser's fingerprint resistance — same defenses, no bundled tor to fight ghost.
+Tor Browser bundles its own tor instance. Running it alongside `sudo snow engage` creates a Tor-over-Tor loop: Tor Browser's bundled tor tries to reach the real Tor network, but snow's transproxy REDIRECTs that traffic into *snow's* tor, which then tries to relay it. Bootstrap fails in both. Use Mullvad Browser if you want Tor Browser's fingerprint resistance — same defenses, no bundled tor to fight Snowblind.
 
 ## Interactions with hardened hosts
 
-- **UFW (nftables backend)**: ghost calls raw `iptables` but installs into
-  named chains (`ghost-trans`, `ghost-killswitch`) and snapshots filter+nat
+- **UFW (nftables backend)**: Snowblind calls raw `iptables` but installs into
+  named chains (`snow-trans`, `snow-killswitch`) and snapshots filter+nat
   state to `state/backups/` before any change. UFW INPUT rules survive an
-  engage→restore cycle intact. The `ghost-killswitch` chain self-terminates
+  engage→restore cycle intact. The `snow-killswitch` chain self-terminates
   in `-j DROP` — it does NOT `RETURN` to `OUTPUT`. This is deliberate: a
   RETURN would hand kill-switched packets back to `OUTPUT`, where UFW's
   `ufw-track-output` (`-m conntrack --ctstate NEW -j ACCEPT`) would accept
   them before the `-P OUTPUT DROP` policy is reached — a leak. Because the
   chain drops in place, the kill-switch is correct regardless of UFW. Note:
-  ghost's `-I OUTPUT 1` jump and our `-I INPUT 1` ESTABLISHED rule both
+  snow's `-I OUTPUT 1` jump and our `-I INPUT 1` ESTABLISHED rule both
   insert at position 1, so the rule-number display in `ufw status numbered`
   shifts by one slot for the duration of engage.
 - **fail2ban**: adds dynamic iptables rules. The backup→engage→restore can
   race with f2b, but f2b re-adds what it needs on the next trigger.
 - **NetworkManager `wifi.mac-address=random`**: NM owns the wifi MAC and
-  will overwrite anything macchanger sets. ghost's mac module warns when it
+  will overwrite anything macchanger sets. snow's mac module warns when it
   detects NM management. Prefer NM's built-in randomization for wifi; use
   macchanger for interfaces NM doesn't manage.
-- **avahi-daemon**: binds UDP 5353 for mDNS, same port ghost gives to Tor's
+- **avahi-daemon**: binds UDP 5353 for mDNS, same port Snowblind gives to Tor's
   DNSPort. Disable with `systemctl disable --now avahi-daemon` if Tor refuses
   to start.
 
@@ -485,7 +485,7 @@ Tor Browser bundles its own tor instance. Running it alongside `sudo ghost engag
 - `engage` is gated on Tor reaching `Bootstrapped 100%`. If Tor fails to
   bootstrap, the killswitch is **not** armed — the box stays online so you
   can investigate. MAC / hostname / IPv6 changes already applied are
-  reversible via `ghost restore`.
+  reversible via `snow restore`.
 - `transproxy.apply()` and `killswitch.apply()` refuse to run if their named
   chain already exists or if their journal entry is present. Running `engage`
   twice without a `restore` in between is a no-op — it won't corrupt backups.
@@ -504,9 +504,9 @@ Result of a full code audit; all shipped in-tree:
 - **Journal survives corruption intact.** A malformed `journal.json` (crash,
   disk issue) used to be silently replaced by a fresh `GENESIS` chain on the
   next write — erasing the record of an engaged session. It is now
-  quarantined to `journal.json.corrupt-<ts>` and `ghost restore` /
-  `ghost status` say so loudly instead of misreporting "no journal".
-- **Persona names validated at dispatch.** `--persona` / `$GHOST_PERSONA`
+  quarantined to `journal.json.corrupt-<ts>` and `snow restore` /
+  `snow status` say so loudly instead of misreporting "no journal".
+- **Persona names validated at dispatch.** `--persona` / `$SNOW_PERSONA`
   feed `state/personas/<name>/` directly; an unchecked name containing `/`
   or `..` was a path traversal. Same charset rule as `persona create`.
 - **Target FQDNs and `--lan` CIDRs validated** before they reach

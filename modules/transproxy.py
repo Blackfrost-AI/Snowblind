@@ -3,14 +3,14 @@ DNS to the upstream's DNS port. Used for upstreams that expose local-loopback
 proxy/DNS ports (Tor). No-op for upstreams that handle routing themselves
 (WireGuard, where kernel routes pull everything through the tunnel).
 
-Rules live in a named `ghost-trans` chain so they can be flushed and recreated
+Rules live in a named `snow-trans` chain so they can be flushed and recreated
 without disturbing pre-existing nat/OUTPUT rules (UFW, fail2ban, docker, etc.).
 """
 from __future__ import annotations
 
 from .util import backup_path, is_dry_run, journal_append, journal_has, log, sh
 
-CHAIN = "ghost-trans"
+CHAIN = "snow-trans"
 RULES_BACKUP = backup_path("transproxy-iptables.save")
 
 # Always-bypass nets: loopback. LAN bypass is passed in dynamically; defaults
@@ -39,7 +39,7 @@ def apply(upstream=None,
     the same list on killswitch.apply so they're also allowed by the filter.
     """
     if journal_has("transproxy", "apply") or _chain_exists():
-        log("transproxy already applied — skipping (use `ghost restore` first)", "warn")
+        log("transproxy already applied — skipping (use `snow restore` first)", "warn")
         return
 
     # Resolve upstream details (or fall back to Tor defaults for legacy callers)

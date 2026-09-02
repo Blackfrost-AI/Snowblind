@@ -14,14 +14,14 @@ from pathlib import Path
 
 from .util import is_dry_run, journal_append, log, make_system_dir, sh, write_system_file
 
-TORRC = Path("/etc/tor/torrc.ghost")
+TORRC = Path("/etc/tor/torrc.snow")
 # Holds the PLAINTEXT ControlPort password (0600, root) — the name is
 # historical; it is not a hash and not a Tor auth cookie. rotate.py and
 # restore.py import this symbol.
-CONTROL_PW_FILE = Path("/etc/tor/ghost_control_pw")
+CONTROL_PW_FILE = Path("/etc/tor/snow_control_pw")
 # Backward-compat alias for anything still referencing the old name.
 COOKIE_HASH_FILE = CONTROL_PW_FILE
-TOR_PID_FILE = Path("/run/tor/ghost.pid")
+TOR_PID_FILE = Path("/run/tor/snow.pid")
 
 # Ports — chosen high to avoid clashing with anything common
 SOCKS_PORT = 9050
@@ -124,7 +124,7 @@ def write_config(exit_country: str | None = None, persona: str | None = None) ->
             f"TransPort {gw}:{TRANS_PORT}\n"
         )
 
-    torrc = f"""# ghost torrc — auto-generated, do not edit
+    torrc = f"""# snow torrc — auto-generated, do not edit
 SocksPort 127.0.0.1:{SOCKS_PORT} IsolateDestAddr
 DNSPort 127.0.0.1:{DNS_PORT}
 TransPort 127.0.0.1:{TRANS_PORT}{extra_bindings}
@@ -144,8 +144,8 @@ ClientPreferIPv6ORPort 0
 ExcludeExitNodes {{??}}
 {exit_block}
 
-Log notice file /var/log/tor/ghost.log
-DataDirectory /var/lib/tor/ghost
+Log notice file /var/log/tor/snow.log
+DataDirectory /var/lib/tor/snow
 PidFile {TOR_PID_FILE}
 RunAsDaemon 0
 """
@@ -153,8 +153,8 @@ RunAsDaemon 0
     # 0700: this directory holds Tor's client state (entry-guard list,
     # consensus cache). Anything a local non-root user can read here narrows
     # their activity correlation.
-    make_system_dir("/var/lib/tor/ghost", 0o700)
-    sh("chown -R debian-tor:debian-tor /var/lib/tor/ghost")
+    make_system_dir("/var/lib/tor/snow", 0o700)
+    sh("chown -R debian-tor:debian-tor /var/lib/tor/snow")
     make_system_dir("/var/log/tor")
     sh("chown debian-tor:debian-tor /var/log/tor")
     # Self-heal /run/tor. install.sh installs a tmpfiles.d entry that recreates
@@ -174,7 +174,7 @@ def _avahi_on_dnsport() -> bool:
 
 
 def start(timeout: int = 45) -> bool:
-    """Spawn tor under debian-tor; poll /var/log/tor/ghost.log for bootstrap.
+    """Spawn tor under debian-tor; poll /var/log/tor/snow.log for bootstrap.
 
     Returns True iff Tor reached `Bootstrapped 100%` within `timeout` seconds.
     Callers (notably engage) MUST gate the kill-switch on a True return — if Tor
@@ -220,19 +220,19 @@ def start(timeout: int = 45) -> bool:
     # surface crashes immediately instead of waiting out the full timeout for
     # a log file that'll never appear.
     log("waiting for tor bootstrap…")
-    log_path = Path("/var/log/tor/ghost.log")
+    log_path = Path("/var/log/tor/snow.log")
     deadline = time.time() + timeout
     while time.time() < deadline:
         rc = proc.poll()
         if rc is not None:
-            log(f"tor exited during bootstrap (rc={rc}) — check /var/log/tor/ghost.log", "err")
+            log(f"tor exited during bootstrap (rc={rc}) — check /var/log/tor/snow.log", "err")
             return False
         if log_path.exists() and "Bootstrapped 100%" in log_path.read_text():
             log("tor bootstrapped (100%)", "ok")
             journal_append({"module": "tor", "action": "start"})
             return True
         time.sleep(1)
-    log(f"tor bootstrap timed out ({timeout}s) — check /var/log/tor/ghost.log", "err")
+    log(f"tor bootstrap timed out ({timeout}s) — check /var/log/tor/snow.log", "err")
     # Don't leave a half-started tor running.
     try:
         proc.terminate()
@@ -246,7 +246,7 @@ def get_circuits() -> list[dict]:
 
     Returns a list of dicts with keys: id, status, hops (list of {fingerprint,
     nickname}), purpose, build_flags, time_created. Empty list on auth/connect
-    failure. Used by `ghost circuit` to show the operator the path.
+    failure. Used by `snow circuit` to show the operator the path.
     """
     if not CONTROL_PW_FILE.exists():
         return []
@@ -328,7 +328,7 @@ def stop() -> None:
             log(f"tor (pid={pid}) killed (didn't exit on SIGTERM)", "warn")
             return
         except (ValueError, ProcessLookupError, PermissionError) as e:
-            log(f"ghost.pid stale or unkillable ({e}) — falling back to pkill", "warn")
+            log(f"snow.pid stale or unkillable ({e}) — falling back to pkill", "warn")
     # Last-resort: pattern match. Tightened to the full -f path so we don't
     # match arbitrary wrappers.
     sh(["pkill", "-f", f"tor -f {TORRC}"], check=False)

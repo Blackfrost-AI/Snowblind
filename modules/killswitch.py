@@ -1,17 +1,17 @@
 """Kill switch: default DROP OUTPUT policy. Only the active upstream + lo + LAN may leave.
 
-Rules live in a named `ghost-killswitch` chain so they can be flushed and
+Rules live in a named `snow-killswitch` chain so they can be flushed and
 recreated independently of UFW / fail2ban / docker chains.
 
 Upstream-aware: Tor egress is matched by UID (debian-tor); WireGuard egress
-is matched by iface (e.g. ghost-wg). Both forms supported simultaneously
+is matched by iface (e.g. snow-wg). Both forms supported simultaneously
 (useful for future chain upstreams).
 """
 from __future__ import annotations
 
 from .util import backup_path, is_dry_run, journal_append, journal_has, log, sh
 
-CHAIN = "ghost-killswitch"
+CHAIN = "snow-killswitch"
 FILTER_BACKUP = backup_path("killswitch-iptables-filter.save")
 FILTER6_BACKUP = backup_path("killswitch-ip6tables-filter.save")
 
@@ -43,7 +43,7 @@ def apply(iface: str = "wlan0",
     Pair this with the same list on transproxy.apply so they travel clearnet.
     """
     if journal_has("killswitch", "apply") or _chain_exists():
-        log("killswitch already applied — skipping (use `ghost restore` first)", "warn")
+        log("killswitch already applied — skipping (use `snow restore` first)", "warn")
         return
 
     # Resolve upstream allowances; fall back to legacy Tor-uid behavior so older
@@ -102,12 +102,12 @@ def apply(iface: str = "wlan0",
     # On a UFW host that leaked all non-Tor UDP (QUIC, WebRTC) past the
     # kill-switch. Ending the chain in DROP makes the kill-switch
     # self-contained: correctness no longer depends on OUTPUT policy or on
-    # ghost being the only OUTPUT rule.
+    # snow being the only OUTPUT rule.
     cmds.append(f"iptables -A {CHAIN} -j DROP")
     cmds.append("iptables -P OUTPUT DROP")  # belt-and-suspenders behind the chain DROP
     # INPUT-side belt + suspenders for hosts running INPUT default DROP.
     cmds.append("iptables -I INPUT 1 -m state --state ESTABLISHED,RELATED "
-                "-m comment --comment ghost-input-est -j ACCEPT")
+                "-m comment --comment snow-input-est -j ACCEPT")
     # IPv6: block entirely (we already nuked the stack via sysctl).
     cmds.append("ip6tables -P OUTPUT DROP")
     cmds.append("ip6tables -P INPUT DROP")
@@ -150,7 +150,7 @@ def revert() -> None:
     sh("ip6tables -P INPUT ACCEPT", check=False)
     sh("ip6tables -P FORWARD ACCEPT", check=False)
     sh("iptables -D INPUT -m state --state ESTABLISHED,RELATED "
-       "-m comment --comment ghost-input-est -j ACCEPT", check=False)
+       "-m comment --comment snow-input-est -j ACCEPT", check=False)
     sh(f"iptables -D OUTPUT -j {CHAIN}", check=False)
     sh(f"iptables -F {CHAIN}", check=False)
     sh(f"iptables -X {CHAIN}", check=False)

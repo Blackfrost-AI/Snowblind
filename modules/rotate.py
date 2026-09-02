@@ -10,7 +10,7 @@ from .tor import CONTROL_PORT, CONTROL_PW_FILE
 
 def new_circuit() -> None:
     if not CONTROL_PW_FILE.exists():
-        log("control password file missing — run `ghost engage` first", "err")
+        log("control password file missing — run `snow engage` first", "err")
         return
     pw = CONTROL_PW_FILE.read_text().strip()
     try:

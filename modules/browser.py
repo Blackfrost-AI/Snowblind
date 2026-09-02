@@ -1,12 +1,12 @@
-"""Mullvad Browser launcher tied to ghost engage state.
+"""Mullvad Browser launcher tied to snow engage state.
 
-ghost owns the network layer; Mullvad Browser owns the fingerprint layer.
+Snowblind owns the network layer; Mullvad Browser owns the fingerprint layer.
 This wrapper enforces the pairing and handles the privilege/env dance
-needed when ghost runs under `sudo` but the browser needs the operator's
+needed when snow runs under `sudo` but the browser needs the operator's
 X/Wayland session to actually paint a window.
 
 What it does:
-- Refuses to launch unless ghost is engaged (skippable for engage-flow callers).
+- Refuses to launch unless snow is engaged (skippable for engage-flow callers).
 - Quick egress check before launch (skippable too).
 - Drops privileges to the invoking user (via SUDO_USER) so the browser
   doesn't run as root.
@@ -17,7 +17,7 @@ What it does:
 - Captures stdout+stderr to state/logs/browser-*.log instead of /dev/null
   so silent failures are actually diagnosable.
 
-Set $GHOST_BROWSER to override the binary path search.
+Set $SNOW_BROWSER to override the binary path search.
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def _invoking_user() -> tuple[str | None, str | None]:
 
 
 def _find_browser() -> str | None:
-    env = os.environ.get("GHOST_BROWSER", "").strip()
+    env = os.environ.get("SNOW_BROWSER", "").strip()
     if env:
         p = Path(os.path.expanduser(env))
         if p.exists():
@@ -86,7 +86,7 @@ def _find_browser() -> str | None:
 # ---------------------------------------------------------------------------
 
 def _is_engaged() -> bool:
-    """True if ghost engage has armed the kill-switch or started the upstream."""
+    """True if snow engage has armed the kill-switch or started the upstream."""
     entries = journal_load()
     for e in entries:
         if e.get("module") == "killswitch" and e.get("action") == "apply":
@@ -209,19 +209,19 @@ def launch(extra_args: list[str] | None = None, skip_gates: bool = False) -> int
     gpg --verify /tmp/mb.tar.xz.asc /tmp/mb.tar.xz
     tar -C ~/.local/share -xJf /tmp/mb.tar.xz
 
-  Or set GHOST_BROWSER=/absolute/path/to/start-mullvad-browser
+  Or set SNOW_BROWSER=/absolute/path/to/start-mullvad-browser
 """)
         return 1
 
     if not skip_gates:
         if not _is_engaged():
-            log("ghost is NOT engaged — refusing to launch browser. "
-                "Run `sudo ghost engage` first.", "err")
+            log("snow is NOT engaged — refusing to launch browser. "
+                "Run `sudo snow engage` first.", "err")
             return 1
         ok, msg = _quick_leak_check()
         if not ok:
             log(f"pre-launch egress check FAILED: {msg}", "err")
-            log("Run `ghost leaktest` to diagnose, then `ghost rotate` or `ghost restore` "
+            log("Run `snow leaktest` to diagnose, then `snow rotate` or `snow restore` "
                 "before relaunching.", "warn")
             return 1
         log(f"pre-launch egress check: {msg}", "ok")
@@ -253,7 +253,7 @@ def launch(extra_args: list[str] | None = None, skip_gates: bool = False) -> int
     if not _persona.is_default(active):
         if not _netns.netns_exists(active):
             log(f"persona '{active}' has no netns — refusing to launch browser. "
-                f"Run `sudo ghost persona create {active}` and `sudo ghost --persona "
+                f"Run `sudo snow persona create {active}` and `sudo snow --persona "
                 f"{active} engage` first.", "err")
             return 1
         ns_name = _netns.ns_name(active)
@@ -283,7 +283,7 @@ def launch(extra_args: list[str] | None = None, skip_gates: bool = False) -> int
         if "DISPLAY" not in user_env and "WAYLAND_DISPLAY" not in user_env:
             log("neither DISPLAY nor WAYLAND_DISPLAY resolved — the browser will "
                 "spawn but cannot paint a window. Is the user logged into a "
-                "graphical session? If you're on a headless box, run `ghost browser` "
+                "graphical session? If you're on a headless box, run `snow browser` "
                 "as your user directly (without sudo) in the X/Wayland session.", "warn")
 
         popen_kwargs["env"] = user_env
@@ -291,7 +291,7 @@ def launch(extra_args: list[str] | None = None, skip_gates: bool = False) -> int
 
         if ns_name:
             # root enters the netns, then runuser drops to the invoking user
-            # inside it. runuser (util-linux, already a ghost dep) preserves
+            # inside it. runuser (util-linux, already a snow dep) preserves
             # the ambient env — DISPLAY/XAUTHORITY/etc. survive the hop.
             cmd = ["ip", "netns", "exec", ns_name,
                    "runuser", "-u", sudo_user, "--"] + cmd

@@ -17,7 +17,7 @@ Operator supplies the wg-quick config — this module doesn't generate it.
 Typical workflow:
     # Mullvad: download account-specific config from mullvad.net/en/account
     sudo cp ~/Downloads/mlvd-se-mma-wg-001.conf /etc/wireguard/mullvad-se.conf
-    sudo ghost engage --upstream wg:mullvad-se
+    sudo snow engage --upstream wg:mullvad-se
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from pathlib import Path
 from ..util import backup_path, is_dry_run, journal_append, log, sh, write_system_file
 
 WG_DIR = Path("/etc/wireguard")
-GHOST_IFACE = "ghost-wg"  # stable iface name regardless of source config name
+SNOW_IFACE = "snow-wg"  # stable iface name regardless of source config name
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 
@@ -42,11 +42,11 @@ class WireGuardUpstream:
         - absolute path to a wg-quick .conf
         - bare name like 'mullvad-se' resolved to /etc/wireguard/<name>.conf
 
-        Either way, we copy to /etc/wireguard/ghost-wg.conf so the iface name
+        Either way, we copy to /etc/wireguard/snow-wg.conf so the iface name
         is stable and our killswitch can match on it deterministically.
         """
         self.config_arg = config
-        self._iface = GHOST_IFACE
+        self._iface = SNOW_IFACE
         self._staged_config_backup: Path | None = None
         self._endpoint: tuple[str, int] | None = None
 

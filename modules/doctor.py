@@ -1,4 +1,4 @@
-"""ghost doctor — pre-flight diagnostics.
+"""snow doctor — pre-flight diagnostics.
 
 Read-only checks that should pass before `engage` arms the kill-switch. The
 single most common failure mode for a Tor-transproxy tool is "you ran engage
@@ -266,7 +266,7 @@ def is_clean(results: list[dict]) -> bool:
 
 
 def run(iface: str | None = None) -> int:
-    """Top-level entrypoint for `ghost doctor`. Returns exit code."""
+    """Top-level entrypoint for `snow doctor`. Returns exit code."""
     results = collect(iface=iface)
     render(results)
     return 0 if is_clean(results) else 1

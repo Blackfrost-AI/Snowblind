@@ -9,7 +9,7 @@ network stack.
 
 State layout:
     state/                          'default' persona (legacy compat — pre-v0.6
-        journal.json                use of ghost stays here unchanged)
+        journal.json                use of snow stays here unchanged)
         baseline.json
         backups/
         logs/
@@ -21,8 +21,8 @@ State layout:
         browser/                    per-persona browser profile
 
 The active persona is selected via:
-    sudo ghost --persona <name> engage
-or persistently via the GHOST_PERSONA env var. ghost.py pre-parses --persona
+    sudo snow --persona <name> engage
+or persistently via the SNOW_PERSONA env var. snow.py pre-parses --persona
 from sys.argv BEFORE importing util so module-globals (STATE_DIR, etc.)
 resolve to the persona's directory rather than the legacy state/.
 
@@ -48,7 +48,7 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$")
 
 def current() -> str:
     """Name of the active persona for this process (env-driven)."""
-    return os.environ.get("GHOST_PERSONA", DEFAULT_PERSONA)
+    return os.environ.get("SNOW_PERSONA", DEFAULT_PERSONA)
 
 
 def is_default(name: str) -> bool:
@@ -113,7 +113,7 @@ def create(name: str, with_netns: bool = True) -> Path:
                 netns.create(name)
             except Exception as e:
                 log(f"netns creation failed: {e}. State dir kept; "
-                    f"you can retry with `sudo ghost persona create {name}`.", "err")
+                    f"you can retry with `sudo snow persona create {name}`.", "err")
     return d
 
 
@@ -133,9 +133,9 @@ def delete(name: str, force: bool = False) -> None:
         raise RuntimeError(
             f"persona '{name}' has an active journal at {d / 'journal.json'}. "
             f"Restore it first:\n"
-            f"  sudo GHOST_PERSONA={name} ghost restore\n"
+            f"  sudo SNOW_PERSONA={name} snow restore\n"
             f"or pass --force to wipe anyway (leaves any in-place iptables/sysctl "
-            f"changes dangling — see `ghost doctor` after)."
+            f"changes dangling — see `snow doctor` after)."
         )
     # Tear down netns first (deleting netns evicts running processes in it).
     from . import netns
@@ -182,5 +182,5 @@ def render(personas: list[dict]) -> None:
         print(f"    {p['state_dir']}")
     print()
     print(f"  current persona: {color(current(), 'cyan')}")
-    print(f"  switch with:     sudo ghost --persona <name> <cmd>")
-    print(f"  or persistently: export GHOST_PERSONA=<name>")
+    print(f"  switch with:     sudo snow --persona <name> <cmd>")
+    print(f"  or persistently: export SNOW_PERSONA=<name>")
