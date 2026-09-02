@@ -102,6 +102,12 @@ class WireGuardUpstream:
         else:
             dst.chmod(0o600)
         log(f"WG config staged at {dst} (source: {src.name})", "ok")
+        # Resolve the peer endpoint NOW, while DNS still works: the pre-engage
+        # kill-switch lock arms before `wg-quick up`, and the handshake's
+        # encrypted UDP must already be in its allow list or the tunnel can
+        # never come up. _resolve_endpoint() re-checks against the live iface
+        # after the handshake and overwrites this.
+        self._parse_endpoint_from_config(src)
         journal_append({
             "module": "upstream", "subtype": "wireguard",
             "action": "configure",
@@ -110,6 +116,42 @@ class WireGuardUpstream:
             "source_config": str(src),
             "backup": str(self._staged_config_backup) if self._staged_config_backup else "",
         })
+
+    def _parse_endpoint_from_config(self, src: Path) -> None:
+        """Pull `Endpoint = host:port` out of the staged config and resolve it
+        to an IPv4 while DNS is still usable (write_config runs before the
+        pre-engage kill-switch lock)."""
+        import socket
+        try:
+            text = src.read_text()
+        except OSError:
+            return
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line.lower().startswith("endpoint") or "=" not in line:
+                continue
+            value = line.split("=", 1)[1].strip()
+            host, _, port = value.rpartition(":")
+            host = host.strip("[]")
+            if not host or not port.isdigit():
+                continue
+            try:
+                import ipaddress
+                try:
+                    ip_object = ipaddress.ip_address(host)
+                    if ip_object.version != 4:
+                        return  # IPv6 endpoint — stack is killed anyway
+                    ip = host
+                except ValueError:
+                    ip = socket.gethostbyname(host)  # resolves A records only
+            except OSError:
+                log(f"could not resolve WG endpoint {host!r} — the pre-engage "
+                    f"lock cannot allow the handshake UDP; tunnel start may "
+                    f"time out", "warn")
+                return
+            self._endpoint = (ip, int(port))
+            log(f"WG endpoint pre-resolved for the kill-switch: {ip}:{port}", "ok")
+            return
 
     def start(self, timeout: int = 20) -> bool:
         if is_dry_run():

@@ -233,12 +233,12 @@ def cmd_engage(args: argparse.Namespace) -> int:
            + ("  [DRY-RUN]" if args.dry_run else ""))
     iface = args.iface or _default_iface()
 
-    # The kill-switch only arms at step 7/8. From here until then (Tor
-    # bootstrap alone can take ~45s) other apps on this box still egress
-    # clearnet. The conntrack flush at step 7 re-evaluates pre-existing flows,
-    # but connections opened DURING the window are not protected.
-    log("the ~10-60s engage window is NOT leak-protected — close sensitive "
-        "apps / browsers before continuing", "warn")
+    # The pre-engage lock (step 6/8) arms the kill-switch BEFORE the upstream
+    # daemon starts, so new clearnet connections from other processes drop
+    # during the upstream's bootstrap. Residual exposure: flows already
+    # ESTABLISHED before engage stay up until the finalize conntrack flush.
+    log("pre-existing connections stay up until the finalize flush — close "
+        "sensitive apps / browsers before continuing", "warn")
 
     # Pre-flight doctor — refuse engage on any FAIL unless explicitly skipped.
     if not args.skip_doctor:
@@ -336,23 +336,36 @@ def cmd_engage(args: argparse.Namespace) -> int:
     log("step 4/8  kill IPv6")
     ipv6.disable()
 
-    log(f"step 5/8  install + start upstream ({upstream.name})")
+    log(f"step 5/8  install + configure upstream ({upstream.name})")
+    # ensure_installed may apt-install — that needs clearnet, so it happens
+    # BEFORE the pre-engage lock arms at step 6.
     upstream.ensure_installed()
     upstream.write_config()
+
+    log("step 6/8  pre-engage lock (close the bootstrap window)")
+    killswitch.prelock(iface=iface, upstream=upstream, lan_cidrs=lan_cidrs,
+                       bypass_ips=target_ips)
+
+    log(f"step 7/8  start upstream ({upstream.name}) — bootstrapping behind the lock")
     if not upstream.start():
-        log(f"upstream {upstream.name} failed to start — REFUSING to arm the kill-switch "
-            "(would brick all outbound)", "err")
-        log("Run `snow restore` to undo MAC/host/IPv6 changes, then investigate the upstream.", "warn")
+        log(f"upstream {upstream.name} failed to start — releasing the pre-engage "
+            f"lock so the box stays reachable", "err")
+        killswitch.revert()
+        journal_append({"module": "killswitch", "action": "unwind",
+                        "reason": f"upstream {upstream.name} failed to start"})
+        log("Pre-engage lock released, network restored. Run `snow restore` to undo "
+            "MAC/host/IPv6 changes, then investigate the upstream.", "warn")
         return 1
 
     if args.target:
-        log("step 5b/8 pin target FQDNs in /etc/hosts (lock resolution before transproxy)")
+        log("step 7b/8 pin target FQDNs in /etc/hosts (lock resolution before transproxy)")
         hostsfile.pin(target_pins)
 
-    log("step 6/8  transparent-proxy iptables (NAT REDIRECT into upstream, if applicable)")
+    log("step 7c/8  transparent-proxy iptables (NAT REDIRECT into upstream, if applicable)")
     transproxy.apply(upstream=upstream, lan_cidrs=lan_cidrs, bypass_ips=target_ips)
 
-    log(f"step 7/8  kill-switch (drop everything that isn't via {upstream.name})")
+    log(f"step 7d/8  kill-switch finalize (flush conntrack; drop everything that "
+        f"isn't via {upstream.name})")
     killswitch.apply(iface=iface, upstream=upstream, lan_cidrs=lan_cidrs, bypass_ips=target_ips)
 
     # Per-persona netns internal routing — DNAT DNS+TCP-SYN inside the ns to

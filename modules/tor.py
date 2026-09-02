@@ -219,26 +219,57 @@ def start(timeout: int = 45) -> bool:
     # Poll for bootstrap — also check the child process is still alive so we
     # surface crashes immediately instead of waiting out the full timeout for
     # a log file that'll never appear.
+    #
+    # The timeout is PROGRESS-AWARE, not wall-clock: every new `Bootstrapped`
+    # step in the log resets the stall clock (deadline = now + timeout). A
+    # cold-cache bootstrap that crawls through its 10 steps over two minutes
+    # succeeds; a connection that actually stalls fails after `timeout`
+    # seconds of zero progress. hard_deadline bounds the worst case. File
+    # logs append across runs, so the seen-count initializes from existing
+    # content to only react to THIS run's lines.
     log("waiting for tor bootstrap…")
     log_path = Path("/var/log/tor/snow.log")
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    seen_lines = 0
+    if log_path.exists():
+        seen_lines = log_path.read_text(errors="replace").count("Bootstrapped ")
+    start_time = time.time()
+    deadline = start_time + timeout
+    hard_deadline = start_time + timeout * 4
+    while True:
         rc = proc.poll()
         if rc is not None:
-            log(f"tor exited during bootstrap (rc={rc}) — check /var/log/tor/snow.log", "err")
+            log(f"tor exited during bootstrap (rc={rc}) — check {log_path}", "err")
             return False
-        if log_path.exists() and "Bootstrapped 100%" in log_path.read_text():
-            log("tor bootstrapped (100%)", "ok")
-            journal_append({"module": "tor", "action": "start"})
-            return True
+        progress = False
+        if log_path.exists():
+            text = log_path.read_text(errors="replace")
+            n = text.count("Bootstrapped ")
+            if n > seen_lines:
+                if "Bootstrapped 100%" in text:
+                    log(f"tor bootstrapped (100%) in {int(time.time() - start_time)}s", "ok")
+                    journal_append({"module": "tor", "action": "start"})
+                    return True
+                seen_lines = n
+                progress = True
+                latest = text.rstrip().splitlines()[-1] if text.strip() else ""
+                log(f"  {latest.strip()[:100]}")
+        now = time.time()
+        if progress:
+            deadline = now + timeout
+        if now >= deadline or now >= hard_deadline:
+            if seen_lines == 0:
+                log(f"tor produced no bootstrap progress in {int(now - start_time)}s "
+                    f"— check {log_path}", "err")
+            else:
+                log(f"tor bootstrap STALLED after step {seen_lines} "
+                    f"(no progress in {timeout}s) — check {log_path}", "err")
+            # Don't leave a half-started tor running.
+            try:
+                proc.terminate()
+            except ProcessLookupError:
+                pass
+            return False
         time.sleep(1)
-    log(f"tor bootstrap timed out ({timeout}s) — check /var/log/tor/snow.log", "err")
-    # Don't leave a half-started tor running.
-    try:
-        proc.terminate()
-    except ProcessLookupError:
-        pass
-    return False
 
 
 def get_circuits() -> list[dict]:

@@ -367,8 +367,9 @@ modules/
   transproxy.py       NAT redirects via named `snow-trans` chain (upstream-aware;
                       no-op for upstreams that route via kernel routes)
   killswitch.py       filter DROP policy via named `snow-killswitch` chain;
-                      authorizes by upstream UID and/or egress iface
-                      (+ conntrack flush so pre-existing flows re-evaluate)
+                      two-phase arm (prelock before upstream start, finalize +
+                      conntrack flush after); authorizes by upstream UID
+                      and/or egress iface
   rotate.py           NEWNYM over ControlPort
   leaktest.py         IP / DNS / IPv6 verification (real DNS leak test via dig)
   restore.py          journal replay in reverse (cancels any pending duration timer)
@@ -405,13 +406,18 @@ state/
   continue to traffic via the ESTABLISHED-allow rule until they tear down
   on their own. Close long-lived sessions (SSH, IRC, persistent websockets)
   before `engage` if conntrack isn't available.
-- **The engage window itself is not leak-protected.** The kill-switch only
-  arms at step 7/8; from the start of `engage` until then (Tor bootstrap
-  alone can take ~45s) other apps on the box still egress clearnet. The
-  conntrack flush handles *pre-existing* flows, but *new* connections opened
-  during the window are not protected. `engage` prints a warning to this
-  effect — close sensitive apps / browsers before running it. A coarse
-  pre-engage lock is a planned hardening.
+- **The engage window is closed by a pre-engage lock.** The kill-switch arms
+  in two phases: `prelock` (step 6/8) installs the full DROP policy *before*
+  the upstream daemon starts, so Tor's bootstrap (~10-45s) drops new
+  connections from every other process instead of letting them egress
+  clearnet. Only the upstream's own traffic (its UID, the WG iface, and the
+  WG endpoint UDP — pre-resolved at config time), loopback, DHCP, and the
+  configured LAN/target bypasses may leave. `apply` (step 7d/8) then flushes
+  conntrack so nothing sails through on a stale ESTABLISHED entry. Residual
+  exposure: flows already ESTABLISHED *before* `engage` ran keep working
+  until that flush — close sensitive apps / browsers before running it. If
+  the upstream fails to start, the lock is released automatically
+  (`unwind`) so the box never bricks itself.
 - **Wifi probe requests carry your previously-joined SSID list** — a
   fingerprint independent of the MAC. Out of scope for this tool. Mitigate at
   the wpa_supplicant / NetworkManager layer with `wifi.scan-rand-mac-address=yes`
@@ -483,12 +489,16 @@ Tor Browser bundles its own tor instance. Running it alongside `sudo snow engage
 ## Idempotency & safety
 
 - `engage` is gated on Tor reaching `Bootstrapped 100%`. If Tor fails to
-  bootstrap, the killswitch is **not** armed — the box stays online so you
-  can investigate. MAC / hostname / IPv6 changes already applied are
-  reversible via `snow restore`.
-- `transproxy.apply()` and `killswitch.apply()` refuse to run if their named
-  chain already exists or if their journal entry is present. Running `engage`
-  twice without a `restore` in between is a no-op — it won't corrupt backups.
+  bootstrap, the pre-engage lock is **released automatically** (`unwind`) —
+  the box stays online so you can investigate. MAC / hostname / IPv6 changes
+  already applied are reversible via `snow restore`.
+- The kill-switch arms in two journaled phases (`prelock` before the
+  upstream starts, `apply` after). State is tracked through the journal
+  (`clean → prelocked → applied`, with `unwind` releasing a prelock), so
+  running `engage` twice without a `restore` in between is a no-op — it
+  won't corrupt backups or duplicate rules.
+- `transproxy.apply()` refuses to run if its named chain already exists or
+  if its journal entry is present.
 - Backups live at `state/backups/`, not `/tmp`. They survive reboot, so a
   panic-restore on next boot will actually have something to replay.
 
